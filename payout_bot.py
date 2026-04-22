@@ -3,195 +3,156 @@ import time
 import re
 import base64
 import logging
+import requests
 from decimal import Decimal
 from dotenv import load_dotenv
+from nacl.signing import SigningKey
 
 # Cài đặt Logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("bot.log"),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.FileHandler("bot.log"), logging.StreamHandler()]
 )
 
-try:
-    from pysui import SuiConfig, SyncClient
-    from pysui.sui.sui_builders.get_builders import QueryTransactionBlocks
-    from pysui.sui.sui_builders.exec_builders import PaySui
-    from pysui.sui.sui_types.scalars import SuiAddress
-    from pysui.sui.sui_crypto import Ed25519KeyPair
-    from pysui.sui.sui_txresults.complex_txresults import TransactionBlock
-except ImportError:
-    logging.error("Missing libraries. Please run: pip install pysui python-dotenv")
-    exit(1)
-
-# --- CONFIGURATION ---
 load_dotenv()
 SECRET_KEY_B64 = os.getenv('SUI_HOUSE_SECRET_KEY_B64')
 HOUSE_ADDRESS = os.getenv('SUI_HOUSE_ADDRESS')
 NETWORK = os.getenv('SUI_NETWORK', 'testnet')
-CHECK_INTERVAL = 1  # Giảm xuống 1 giây để trả thưởng trong ~3s
+RPC_URL = "https://fullnode.testnet.sui.io:443" if NETWORK == 'testnet' else "https://fullnode.mainnet.sui.io:443"
+CHECK_INTERVAL = 1
 DB_FILE = "processed_digests.txt"
 
 if not SECRET_KEY_B64 or not HOUSE_ADDRESS:
-    logging.error("❌ SUI_HOUSE_SECRET_KEY_B64 or SUI_HOUSE_ADDRESS is missing in .env")
+    logging.error("❌ Thiếu biến môi trường trong .env")
     exit(1)
 
-# Khởi tạo Keypair từ Base64
-def get_keypair(b64_str):
+# Giải mã Keypair
+def get_key_info(b64_str):
     data = base64.b64decode(b64_str)
-    # Nếu là 33 bytes (có flag Ed25519 ở đầu), bỏ byte đầu tiên
-    if len(data) == 33 and data[0] == 0:
-        data = data[1:]
-    return Ed25519KeyPair.from_bytes(data)
+    if len(data) == 33 and data[0] == 0: data = data[1:]
+    signing_key = SigningKey(data)
+    verify_key = signing_key.verify_key
+    return signing_key, verify_key.encode()
 
-keypair = get_keypair(SECRET_KEY_B64)
-# pysui config tự động dựa trên network
-try:
-    config = SuiConfig.default_config()
-except Exception:
-    logging.warning("No default Sui config found. Using manual config.")
-    config = SuiConfig.user_config(rpc_url="https://fullnode.testnet.sui.io:443")
+signing_key, pub_key_bytes = get_key_info(SECRET_KEY_B64)
 
-client = SyncClient(config)
+def rpc_call(method, params):
+    try:
+        payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+        res = requests.post(RPC_URL, json=payload, timeout=10)
+        return res.json().get('result')
+    except Exception as e:
+        # logging.error(f"RPC Error ({method}): {e}")
+        return None
 
-# Lưu trữ các giao dịch đã xử lý vào file
 def load_processed():
-    if not os.path.exists(DB_FILE):
-        return set()
-    with open(DB_FILE, "r") as f:
-        return set(line.strip() for line in f if line.strip())
+    if not os.path.exists(DB_FILE): return set()
+    with open(DB_FILE, "r") as f: return set(line.strip() for line in f if line.strip())
 
 def save_processed(digest):
-    with open(DB_FILE, "a") as f:
-        f.write(f"{digest}\n")
+    with open(DB_FILE, "a") as f: f.write(f"{digest}\n")
 
 processed_digests = load_processed()
 
 def get_suffix(amount_mist):
-    """Lấy số cuối cùng của phần thập phân sau khi chia 10^9 (giống JS)"""
     sui_amount = Decimal(amount_mist) / Decimal(10**9)
     sui_str = format(sui_amount.normalize(), 'f')
-    if "." not in sui_str:
-        return None
+    if "." not in sui_str: return None
     decimal_part = sui_str.split(".")[1]
-    if not decimal_part:
-        return None
-    return decimal_part[-1]
+    return decimal_part[-1] if decimal_part else None
+
+def get_payout_data(sender, amount_mist):
+    # 1. Lấy danh sách coin của nhà cái để trả phí và làm nguồn tiền
+    coins = rpc_call("suix_getCoins", [HOUSE_ADDRESS, "0x2::sui::SUI", None, 1])
+    if not coins or not coins.get('data'): return None
+    coin_id = coins['data'][0]['coinObjectId']
+    
+    # 2. Tạo transaction bytes (Unsafe)
+    # unsafe_paySui(signer, input_coins, recipients, amounts, gas_budget)
+    tx_data = rpc_call("unsafe_paySui", [
+        HOUSE_ADDRESS, 
+        [coin_id], 
+        [sender], 
+        [str(amount_mist)], 
+        "10000000" # gas budget 0.01 SUI
+    ])
+    return tx_data.get('txBytes') if tx_data else None
+
+def sign_and_execute(tx_bytes_b64):
+    tx_bytes = base64.b64decode(tx_bytes_b64)
+    # Intent: [0, 0, 0] cho TransactionData
+    intent = b'\x00\x00\x00'
+    signature_bytes = signing_key.sign(intent + tx_bytes).signature
+    
+    # Serialized Signature: [flag(0)] + [sig] + [pubkey]
+    serialized_sig = base64.b64encode(b'\x00' + signature_bytes + pub_key_bytes).decode()
+    
+    # Execute
+    return rpc_call("sui_executeTransactionBlock", [
+        tx_bytes_b64, 
+        [serialized_sig], 
+        {"showEffects": True}, 
+        "WaitForLocalExecution"
+    ])
 
 def check_and_payout():
     global processed_digests
-    # logging.info(f"🔍 Scanning...") # Giảm bớt log để tránh rác terminal khi chạy 1s/lần
-    
-    try:
-        # Query các giao dịch đến địa chỉ nhà cái
-        builder = QueryTransactionBlocks(
-            query={"ToAddress": HOUSE_ADDRESS},
-            descending_order=True,
-            limit=10
-        )
+    res = rpc_call("suix_queryTransactionBlocks", [
+        {"filter": {"ToAddress": HOUSE_ADDRESS}, "options": {"showBalanceChanges": True, "showInput": True}},
+        None, 10, True
+    ])
+    if not res: return
+
+    for tx in res.get('data', []):
+        digest = tx['digest']
+        if digest in processed_digests: continue
         
-        result = client.execute(builder)
-        if not result.is_ok():
-            return
-
-        tx_blocks = result.result_data.data
+        sender = tx['transaction']['data']['sender']
+        house_change = sum(int(c['amount']) for c in tx.get('balanceChanges', []) 
+                          if c['owner'].get('AddressOwner') == HOUSE_ADDRESS and int(c['amount']) > 0)
         
-        for tx in tx_blocks:
-            digest = tx.digest
-            if digest in processed_digests:
-                continue
-            
-            sender = tx.transaction.data.sender
-            
-            # Kiểm tra số tiền nhận được (balanceChanges)
-            house_change = None
-            if hasattr(tx, 'balance_changes'):
-                for change in tx.balance_changes:
-                    if change.owner.get('AddressOwner') == HOUSE_ADDRESS:
-                        amount = int(change.amount)
-                        if amount > 0:
-                            house_change = amount
-                            break
-            
-            if not house_change:
-                processed_digests.add(digest)
-                save_processed(digest)
-                continue
-
-            amount_mist = house_change
-            suffix = get_suffix(amount_mist)
-            
-            if not suffix:
-                processed_digests.add(digest)
-                save_processed(digest)
-                continue
-                
-            # Lấy số cuối của Digest
-            digits = re.findall(r'\d', digest)
-            if not digits:
-                processed_digests.add(digest)
-                save_processed(digest)
-                continue
-            last_digit = int(digits[-1])
-            
-            is_win = False
-            ratio = 0
-            
-            # Logic game
-            if suffix == '1' and last_digit in [1, 3, 5, 7]:
-                is_win = True; ratio = 2.4
-            elif suffix == '2' and last_digit in [2, 4, 6, 8]:
-                is_win = True; ratio = 2.4
-            elif suffix == '4' and last_digit in [5, 6, 7, 8]:
-                is_win = True; ratio = 2.2
-            elif suffix == '3' and last_digit in [1, 2, 3, 4]:
-                is_win = True; ratio = 2.2
-                
-            if is_win:
-                reward_amount = int(amount_mist * ratio)
-                logging.info(f"🎯 WINNER detected: {sender} won {reward_amount/1e9} SUI")
-
-                # KIỂM TRA SỐ DƯ NHÀ CÁI TRƯỚC KHI TRẢ
-                balance_check = client.get_balance(SuiAddress(HOUSE_ADDRESS))
-                if balance_check.is_ok():
-                    house_balance = int(balance_check.result_data.total_balance)
-                    if house_balance < reward_amount + 5000000: # Cần dư thêm một ít cho phí gas
-                        processed_digests.add(digest)
-                        save_processed(digest)
-                        continue
-                
-                # Gửi Payout
-                payout_tx = PaySui(
-                    recipients=[SuiAddress(sender)],
-                    amounts=[reward_amount]
-                )
-                
-                payout_result = client.execute(payout_tx, keypair)
-                
-                if payout_result.is_ok():
-                    logging.info(f"💸 Payout sent! Digest: {payout_result.result_data.digest}")
-                else:
-                    logging.error(f"❌ Payout failed for {digest}: {payout_result.result_string}")
-                    # Nếu lỗi không phải do số dư (ví dụ mạng lag), có thể thử lại ở vòng sau
-                    # Nhưng theo yêu cầu "bỏ qua luôn", ta có thể add vào processed luôn
-                    processed_digests.add(digest)
-                    save_processed(digest)
-                    continue
-
-            # Đánh dấu đã xử lý (thua hoặc đã trả thưởng xong)
+        if house_change <= 0:
             processed_digests.add(digest)
             save_processed(digest)
+            continue
+
+        suffix = get_suffix(house_change)
+        digits = re.findall(r'\d', digest)
+        if not suffix or not digits:
+            processed_digests.add(digest)
+            save_processed(digest)
+            continue
             
-    except Exception as e:
-        logging.error(f"Error in main loop: {str(e)}")
+        last_digit = int(digits[-1])
+        ratio = 0
+        if suffix == '1' and last_digit in [1, 3, 5, 7]: ratio = 2.4
+        elif suffix == '2' and last_digit in [2, 4, 6, 8]: ratio = 2.4
+        elif suffix == '4' and last_digit in [5, 6, 7, 8]: ratio = 2.2
+        elif suffix == '3' and last_digit in [1, 2, 3, 4]: ratio = 2.2
+            
+        if ratio > 0:
+            reward = int(house_change * ratio)
+            logging.info(f"🎯 WINNER: {sender} won {reward/1e9} SUI")
+            
+            # Kiểm tra số dư (Đơn giản hóa)
+            balance = rpc_call("suix_getBalance", [HOUSE_ADDRESS])
+            if balance and int(balance['totalBalance']) < reward + 15000000:
+                processed_digests.add(digest); save_processed(digest); continue
+            
+            tx_bytes = get_payout_data(sender, reward)
+            if tx_bytes:
+                exec_res = sign_and_execute(tx_bytes)
+                if exec_res and exec_res.get('effects', {}).get('status', {}).get('status') == 'success':
+                    logging.info(f"💸 Payout sent! Digest: {exec_res['digest']}")
+                else:
+                    logging.error(f"❌ Payout failed for {digest}")
+
+        processed_digests.add(digest)
+        save_processed(digest)
 
 if __name__ == "__main__":
-    logging.info("🤖 Sui Payout Bot (Python) started...")
-    logging.info(f"🌍 Network: {NETWORK}")
-    
+    logging.info("🤖 Sui Ultra-Light Bot started (Requests + PyNaCl)...")
     while True:
         check_and_payout()
         time.sleep(CHECK_INTERVAL)
