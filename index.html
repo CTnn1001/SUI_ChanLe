@@ -7,7 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -20,12 +20,28 @@
                 </svg>
                 SuiHub
             </div>
-            <div class="nav-tabs">
-                <button class="tab-btn active" data-tab="home">Trang chủ</button>
-                <button class="tab-btn" data-tab="transfer">Chuyển SUI</button>
-                <button class="tab-btn" data-tab="shop">Cửa hàng</button>
+            
+            <button id="menuToggle" class="menu-toggle" aria-label="Toggle Menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+
+            <div id="navMenu" class="nav-menu">
+                <div class="nav-tabs">
+                    <button class="tab-btn active" data-tab="home">Trang chủ</button>
+                    <button class="tab-btn" data-tab="transfer">Chuyển SUI</button>
+                    <button class="tab-btn" data-tab="shop">Cửa hàng</button>
+                    <button class="tab-btn" data-tab="casino">Casino</button>
+                    <button class="tab-btn" data-tab="history">Lịch sử</button>
+                </div>
+                <div class="nav-actions">
+                    <button id="connectBtn" class="btn-primary">Kết nối ví</button>
+                    <button id="logoutBtn" class="btn-logout" style="display: none;" title="Đăng xuất">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                    </button>
+                </div>
             </div>
-            <button id="connectBtn" class="btn-primary">Kết nối ví</button>
         </div>
     </nav>
 
@@ -73,27 +89,7 @@
                         <span>~0.001 SUI</span>
                     </div>
                 </div>
-                <button id="transferBtn" class="btn-primary btn-full">Xác nhận gửi tiền</button>
-            </div>
-
-            <!-- Bảng lịch sử giao dịch -->
-            <div class="history-container">
-                <h3 class="section-title" style="font-size: 24px; margin-bottom: 24px;">Lịch sử giao dịch</h3>
-                <div class="history-table-wrapper">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Loại</th>
-                                <th>Chi tiết</th>
-                                <th>Số lượng</th>
-                                <th>Thời gian</th>
-                            </tr>
-                        </thead>
-                        <tbody id="historyBody">
-                            <!-- JS will inject here -->
-                        </tbody>
-                    </table>
-                </div>
+                <button id="transferBtn" class="btn-primary btn-full">Xác nhận gửi SUI</button>
             </div>
         </section>
 
@@ -102,6 +98,114 @@
             <h2 class="section-title">Kho tài khoản đã xác thực</h2>
             <div id="productGrid" class="market-grid">
                 <!-- Sản phẩm render từ JS -->
+            </div>
+        </section>
+
+        <!-- Casino -->
+        <section id="casino-section" class="app-section">
+            <div class="casino-container">
+                <div class="house-stats">
+                    <div class="stat-card">
+                        <span class="stat-label">💰 Số dư nhà cái</span>
+                        <div class="stat-value"><span id="houseBalance">0.00</span> SUI</div>
+                    </div>
+                </div>
+                <div class="rules-card">
+                    <h3 class="card-subtitle">Thể lệ trò chơi</h3>
+                    <div class="rules-table-wrapper">
+                        <table class="rules-table">
+                            <thead>
+                                <tr>
+                                    <th>Loại cược</th>
+                                    <th>Kết quả thắng</th>
+                                    <th>Đuôi số</th>
+                                    <th>Tỉ lệ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Chẵn</td>
+                                    <td><span class="win-numbers">2, 4, 6, 8</span></td>
+                                    <td><span class="suffix-tag">2</span></td>
+                                    <td class="ratio-text">x2.4</td>
+                                </tr>
+                                <tr>
+                                    <td>Lẻ</td>
+                                    <td><span class="win-numbers">1, 3, 5, 7</span></td>
+                                    <td><span class="suffix-tag">1</span></td>
+                                    <td class="ratio-text">x2.4</td>
+                                </tr>
+                                <tr>
+                                    <td>Tài</td>
+                                    <td><span class="win-numbers">5, 6, 7, 8</span></td>
+                                    <td><span class="suffix-tag">4</span></td>
+                                    <td class="ratio-text">x2.2</td>
+                                </tr>
+                                <tr>
+                                    <td>Xỉu</td>
+                                    <td><span class="win-numbers">1, 2, 3, 4</span></td>
+                                    <td><span class="suffix-tag">3</span></td>
+                                    <td class="ratio-text">x2.2</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="rules-note">
+                        <p>⚠️ Cược ít nhất: <b>0.3 SUI</b> | Nhiều nhất: <b>5 SUI</b></p>
+                        <p>➡️ Ví dụ: Mã kết thúc là <b>...J6Kc</b> thì số gần nhất là <b>6</b> (Chẵn & Tài).</p>
+                        <p>💡 Ví dụ: Cược <b>Tài</b> thì chuyển <b>0.54 SUI</b></p>
+                        <p>⚡ Hệ thống trả thưởng tự động trong <b>30s</b>.</p>
+                    </div>
+                </div>
+
+                <div class="bet-form">
+                    <div class="form-group">
+                        <label>Số lượng muốn cược (SUI)</label>
+                        <div class="input-wrapper">
+                            <input type="number" id="casinoAmount" placeholder="0.30" step="0.01" min="0.3" max="5" class="form-input">
+                        </div>
+                    </div>
+                    <button id="casinoConfirmBtn" class="btn-primary btn-full">Xác nhận gửi SUI</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Lịch sử giao dịch -->
+        <section id="history-section" class="app-section">
+            <div class="history-container" style="max-width: 1000px; margin-top: 0;">
+                <h2 class="section-title">Lịch sử giao dịch</h2>
+                
+                <div class="filter-container">
+                    <button class="filter-btn active" data-filter="all">Tất cả</button>
+                    <button class="filter-btn" data-filter="sent">Gửi đi</button>
+                    <button class="filter-btn" data-filter="received">Nhận về</button>
+                </div>
+
+                <div class="history-table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Trạng thái</th>
+                                <th>Mã giao dịch</th>
+                                <th>Số lượng</th>
+                                <th>Kết quả</th>
+                                <th>Thời gian</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyBody">
+                            <!-- JS sẽ inject dữ liệu vào đây -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Phân trang -->
+                <div class="pagination-container">
+                    <button id="prevPage" class="pagination-btn" disabled>&lt;</button>
+                    <div class="page-info">
+                        Trang <span id="currentPageDisplay">1</span> / <span id="totalPagesDisplay">1</span>
+                    </div>
+                    <button id="nextPage" class="pagination-btn" disabled>&gt;</button>
+                </div>
             </div>
         </section>
     </main>
@@ -115,7 +219,7 @@
             <div id="modalContent" class="modal-info"></div>
             <div id="txResult" style="display: none; margin-bottom: 24px;">
                 <p style="color: var(--sui-text-dim); font-size: 14px; margin-bottom: 8px;">Mã giao dịch (Tx Hash):</p>
-                <p id="txHash" style="font-family: monospace; font-size: 12px; color: var(--sui-blue); word-break: break-all;"></p>
+                <p id="txHash" style="font-size: 12px; color: var(--sui-blue); word-break: break-all; font-weight: 600; letter-spacing: 0.5px;"></p>
             </div>
             <div class="modal-btns">
                 <button id="cancelBtn" class="btn-secondary">Hủy bỏ</button>
@@ -142,6 +246,10 @@
             <button class="btn-primary btn-full" onclick="document.getElementById('successModal').style.display='none'">TUYỆT VỜI</button>
         </div>
     </div>
+
+    <button id="scrollToTop" class="btn-scroll-top" title="Lên đầu trang">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+    </button>
 
     <script type="module" src="/main.js"></script>
 </body>
