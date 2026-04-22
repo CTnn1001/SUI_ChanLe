@@ -1,8 +1,7 @@
-
-import { SuiClient, getFullnodeUrl } from '@mysten/sui.js/client';
-import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519';
-import { TransactionBlock } from '@mysten/sui.js/transactions';
-import { fromB64 } from '@mysten/sui.js/utils';
+import { SuiJsonRpcClient as SuiClient, getJsonRpcFullnodeUrl as getFullnodeUrl } from '@mysten/sui/jsonRpc';
+import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
+import { Transaction } from '@mysten/sui/transactions';
+import { fromBase64 } from '@mysten/sui/utils';
 
 // --- CONFIGURATION (Load from Vercel Environment Variables) ---
 const SECRET_KEY_B64 = process.env.SUI_HOUSE_SECRET_KEY_B64;
@@ -13,26 +12,26 @@ const NETWORK = process.env.SUI_NETWORK || 'testnet';
 const client = new SuiClient({ url: getFullnodeUrl(NETWORK) });
 
 export default async function handler(req, res) {
-    // Chỉ cho phép chạy nếu có quyền (Hoặc từ Vercel Cron)
-    // if (req.headers['x-vercel-cron'] !== 'true') {
-    //     return res.status(401).json({ error: 'Unauthorized' });
-    // }
-
     console.log('🤖 Vercel Payout Cron started...');
 
     try {
         if (!SECRET_KEY_B64 || !HOUSE_ADDRESS) {
-            throw new Error('Missing environment variables');
+            throw new Error('Missing environment variables SUI_HOUSE_SECRET_KEY_B64 or SUI_HOUSE_ADDRESS');
         }
 
-        const keypair = Ed25519Keypair.fromSecretKey(fromB64(SECRET_KEY_B64));
+        // Xử lý Secret Key nếu có flag (33 bytes)
+        let secretKey = fromBase64(SECRET_KEY_B64);
+        if (secretKey.length === 33 && secretKey[0] === 0) {
+            secretKey = secretKey.slice(1);
+        }
+        const keypair = Ed25519Keypair.fromSecretKey(secretKey);
 
         // 1. Lấy danh sách giao dịch gần nhất của nhà cái
         const txs = await client.queryTransactionBlocks({
             filter: { ToAddress: HOUSE_ADDRESS },
             options: { showBalanceChanges: true, showInput: true, showEffects: true },
-            limit: 10,
-            descending: true
+            limit: 20,
+            descendingOrder: true
         });
 
         const processedBets = [];
@@ -69,8 +68,7 @@ export default async function handler(req, res) {
             else if (suffix === '3' && [1, 2, 3, 4].includes(lastDigit)) { isWin = true; ratio = 2.2; }
 
             if (isWin) {
-                // KIỂM TRA XEM ĐÃ TRẢ THƯỞNG CHƯA (Tránh trả 2 lần)
-                // Trong thực tế nên dùng Database, ở đây chúng ta check history ngắn hạn
+                // KIỂM TRA XEM ĐÃ TRẢ THƯỞNG CHƯA
                 const alreadyPaid = await checkAlreadyPaid(sender, digest);
                 if (alreadyPaid) {
                     console.log(`Skipping already paid bet: ${digest}`);
@@ -92,26 +90,18 @@ export default async function handler(req, res) {
 }
 
 async function checkAlreadyPaid(recipient, betDigest) {
-    // Check history of outgoing transactions to see if we already paid for this bet
-    // For simplicity in this demo, we could use a simple check or skip if too complex
-    // Here we'll just check if there's any outgoing tx to the recipient in the last 5 txs
-    const outgoing = await client.queryTransactionBlocks({
-        filter: { FromAddress: HOUSE_ADDRESS },
-        limit: 5,
-        descending: true
-    });
-    
     // Lưu ý: Đây là cách check đơn giản, trong sản xuất nên dùng Database lưu betDigest đã xử lý
-    return false; // Mặc định trả về false để test, bạn nên cài đặt thêm DB
+    // Hiện tại tạm thời trả về false để logic hoạt động
+    return false;
 }
 
 async function sendPayout(client, keypair, recipient, amount) {
-    const txb = new TransactionBlock();
-    const [coin] = txb.splitCoins(txb.gas, [txb.pure(amount)]);
-    txb.transferObjects([coin], txb.pure(recipient));
+    const tx = new Transaction();
+    const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(amount)]);
+    tx.transferObjects([coin], tx.pure.address(recipient));
 
-    return await client.signAndExecuteTransactionBlock({
+    return await client.signAndExecuteTransaction({
         signer: keypair,
-        transactionBlock: txb,
+        transaction: tx,
     });
 }

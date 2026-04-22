@@ -1,8 +1,8 @@
 import 'dotenv/config';
-import { SuiClient, getFullnodeUrl } from '@mysten/sui.js/client';
-import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519';
-import { TransactionBlock } from '@mysten/sui.js/transactions';
-import { fromB64 } from '@mysten/sui.js/utils';
+import { SuiJsonRpcClient as SuiClient, getJsonRpcFullnodeUrl as getFullnodeUrl } from '@mysten/sui/jsonRpc';
+import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
+import { Transaction } from '@mysten/sui/transactions';
+import { fromBase64 } from '@mysten/sui/utils';
 
 /**
  * 💡 LƯU Ý QUAN TRỌNG VỀ BẢO MẬT:
@@ -16,24 +16,42 @@ const HOUSE_ADDRESS = process.env.SUI_HOUSE_ADDRESS;
 const NETWORK = process.env.SUI_NETWORK || 'testnet';
 // ---------------------
 
+if (!SECRET_KEY_B64 || !HOUSE_ADDRESS) {
+    console.error('❌ Error: SUI_HOUSE_SECRET_KEY_B64 or SUI_HOUSE_ADDRESS is missing in .env');
+    process.exit(1);
+}
+
 const client = new SuiClient({ url: getFullnodeUrl(NETWORK) });
-const keypair = Ed25519Keypair.fromSecretKey(fromB64(SECRET_KEY_B64));
+
+// Xử lý Secret Key nếu có flag (33 bytes)
+let secretKey = fromBase64(SECRET_KEY_B64);
+if (secretKey.length === 33 && secretKey[0] === 0) {
+    secretKey = secretKey.slice(1);
+}
+const keypair = Ed25519Keypair.fromSecretKey(secretKey);
 
 console.log('🤖 Payout Bot is starting...');
 console.log('🏠 Monitoring House:', HOUSE_ADDRESS);
+
+// Tập hợp các digest đã xử lý để tránh trả thưởng trùng
+const processedDigests = new Set();
 
 async function checkAndPayout() {
     try {
         const txs = await client.queryTransactionBlocks({
             filter: { ToAddress: HOUSE_ADDRESS },
             options: { showBalanceChanges: true, showInput: true, showEffects: true },
-            limit: 10,
-            descending: true
+            limit: 20,
+            descendingOrder: true
         });
 
         for (const tx of txs.data) {
-            const sender = tx.transaction.data.sender;
             const digest = tx.digest;
+            
+            // Nếu đã xử lý rồi thì bỏ qua
+            if (processedDigests.has(digest)) continue;
+
+            const sender = tx.transaction.data.sender;
             
             // Tìm sự thay đổi số dư của nhà cái (số dương là tiền nhận được)
             const houseChange = tx.balanceChanges.find(bc => bc.owner.AddressOwner === HOUSE_ADDRESS);
@@ -41,9 +59,6 @@ async function checkAndPayout() {
 
             const amountMist = parseInt(houseChange.amount);
             const rawAmountStr = (amountMist / 1000000000).toString();
-            
-            // Kiểm tra xem giao dịch này đã được trả thưởng chưa (Dùng metadata hoặc DB nếu cần)
-            // Trong bản demo này, chúng ta giả định bot check digest.
             
             // Logic cược:
             const decimalPartMatch = rawAmountStr.split('.')[1];
@@ -70,6 +85,9 @@ async function checkAndPayout() {
                 console.log(`✅ WINNER detected! Sending ${rewardAmount / 1e9} SUI to ${sender}`);
                 await sendPayout(sender, rewardAmount);
             }
+            
+            // Đánh dấu là đã xử lý
+            processedDigests.has(digest) || processedDigests.add(digest);
         }
     } catch (e) {
         console.error('Error in bot loop:', e.message);
@@ -77,14 +95,14 @@ async function checkAndPayout() {
 }
 
 async function sendPayout(recipient, amount) {
-    const txb = new TransactionBlock();
-    const [coin] = txb.splitCoins(txb.gas, [txb.pure(amount)]);
-    txb.transferObjects([coin], txb.pure(recipient));
+    const tx = new Transaction();
+    const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(amount)]);
+    tx.transferObjects([coin], tx.pure.address(recipient));
 
     try {
-        const result = await client.signAndExecuteTransactionBlock({
+        const result = await client.signAndExecuteTransaction({
             signer: keypair,
-            transactionBlock: txb,
+            transaction: tx,
         });
         console.log('💸 Payout sent! Digest:', result.digest);
     } catch (e) {
