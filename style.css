@@ -643,12 +643,26 @@ td { padding: 14px 20px; border-top: 1px solid var(--glass-border); font-size: 1
 .rules-table-wrapper {
     background: var(--sui-gray-light);
     border-radius: 16px;
-    overflow: hidden;
+    overflow-x: auto;
     margin-bottom: 20px;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Custom scrollbar for rules table */
+.rules-table-wrapper::-webkit-scrollbar {
+    height: 6px;
+}
+.rules-table-wrapper::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+}
+.rules-table-wrapper::-webkit-scrollbar-thumb {
+    background: var(--sui-blue);
+    border-radius: 10px;
 }
 
 .rules-table {
     width: 100%;
+    min-width: 500px; /* Đảm bảo bảng đủ rộng để kích hoạt cuộn ngang trên mobile */
     border-collapse: collapse;
 }
 
