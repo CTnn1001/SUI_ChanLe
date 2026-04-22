@@ -32,7 +32,7 @@ load_dotenv()
 SECRET_KEY_B64 = os.getenv('SUI_HOUSE_SECRET_KEY_B64')
 HOUSE_ADDRESS = os.getenv('SUI_HOUSE_ADDRESS')
 NETWORK = os.getenv('SUI_NETWORK', 'testnet')
-CHECK_INTERVAL = 10  # Seconds
+CHECK_INTERVAL = 1  # Giảm xuống 1 giây để trả thưởng trong ~3s
 DB_FILE = "processed_digests.txt"
 
 if not SECRET_KEY_B64 or not HOUSE_ADDRESS:
@@ -49,14 +49,10 @@ def get_keypair(b64_str):
 
 keypair = get_keypair(SECRET_KEY_B64)
 # pysui config tự động dựa trên network
-# Đối với bot độc lập, ta có thể dùng config mặc định hoặc tạo mới
 try:
     config = SuiConfig.default_config()
 except Exception:
-    # Nếu chưa có config (chưa chạy sui client), ta tạo config tối thiểu
     logging.warning("No default Sui config found. Using manual config.")
-    # Lưu ý: Pysui thường yêu cầu config file. Trên VPS bạn nên chạy `sui client` trước 1 lần.
-    # Hoặc ta có thể dùng SyncClient với URL trực tiếp nếu pysui hỗ trợ.
     config = SuiConfig.user_config(rpc_url="https://fullnode.testnet.sui.io:443")
 
 client = SyncClient(config)
@@ -87,23 +83,18 @@ def get_suffix(amount_mist):
 
 def check_and_payout():
     global processed_digests
-    logging.info(f"🔍 Scanning transactions for {HOUSE_ADDRESS}...")
+    # logging.info(f"🔍 Scanning...") # Giảm bớt log để tránh rác terminal khi chạy 1s/lần
     
     try:
         # Query các giao dịch đến địa chỉ nhà cái
         builder = QueryTransactionBlocks(
             query={"ToAddress": HOUSE_ADDRESS},
             descending_order=True,
-            limit=20
+            limit=10
         )
         
-        # Thêm options để xem balanceChanges và input
-        # Lưu ý: Pysui QueryTransactionBlocks có thể cần tham số khác tùy phiên bản
-        # Ở đây ta giả định cấu trúc chuẩn của Sui RPC
         result = client.execute(builder)
-        
         if not result.is_ok():
-            logging.error(f"Error querying transactions: {result.result_string}")
             return
 
         tx_blocks = result.result_data.data
@@ -116,7 +107,6 @@ def check_and_payout():
             sender = tx.transaction.data.sender
             
             # Kiểm tra số tiền nhận được (balanceChanges)
-            # Lưu ý: Cấu trúc dữ liệu của pysui có thể bọc trong các Object
             house_change = None
             if hasattr(tx, 'balance_changes'):
                 for change in tx.balance_changes:
@@ -128,6 +118,7 @@ def check_and_payout():
             
             if not house_change:
                 processed_digests.add(digest)
+                save_processed(digest)
                 continue
 
             amount_mist = house_change
@@ -135,12 +126,14 @@ def check_and_payout():
             
             if not suffix:
                 processed_digests.add(digest)
+                save_processed(digest)
                 continue
                 
             # Lấy số cuối của Digest
             digits = re.findall(r'\d', digest)
             if not digits:
                 processed_digests.add(digest)
+                save_processed(digest)
                 continue
             last_digit = int(digits[-1])
             
@@ -159,7 +152,16 @@ def check_and_payout():
                 
             if is_win:
                 reward_amount = int(amount_mist * ratio)
-                logging.info(f"✅ WINNER: {sender} won {reward_amount/1e9} SUI (Bet: {amount_mist/1e9}, Ratio: {ratio})")
+                logging.info(f"🎯 WINNER detected: {sender} won {reward_amount/1e9} SUI")
+
+                # KIỂM TRA SỐ DƯ NHÀ CÁI TRƯỚC KHI TRẢ
+                balance_check = client.get_balance(SuiAddress(HOUSE_ADDRESS))
+                if balance_check.is_ok():
+                    house_balance = int(balance_check.result_data.total_balance)
+                    if house_balance < reward_amount + 5000000: # Cần dư thêm một ít cho phí gas
+                        processed_digests.add(digest)
+                        save_processed(digest)
+                        continue
                 
                 # Gửi Payout
                 payout_tx = PaySui(
@@ -167,17 +169,19 @@ def check_and_payout():
                     amounts=[reward_amount]
                 )
                 
-                # Thực hiện ký và gửi
                 payout_result = client.execute(payout_tx, keypair)
                 
                 if payout_result.is_ok():
                     logging.info(f"💸 Payout sent! Digest: {payout_result.result_data.digest}")
                 else:
                     logging.error(f"❌ Payout failed for {digest}: {payout_result.result_string}")
-                    # Nếu lỗi do gas hoặc network, có thể thử lại sau (không add vào processed)
+                    # Nếu lỗi không phải do số dư (ví dụ mạng lag), có thể thử lại ở vòng sau
+                    # Nhưng theo yêu cầu "bỏ qua luôn", ta có thể add vào processed luôn
+                    processed_digests.add(digest)
+                    save_processed(digest)
                     continue
 
-            # Đánh dấu đã xử lý
+            # Đánh dấu đã xử lý (thua hoặc đã trả thưởng xong)
             processed_digests.add(digest)
             save_processed(digest)
             

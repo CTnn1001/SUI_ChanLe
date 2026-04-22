@@ -650,10 +650,8 @@ async function handleCasinoBet() {
         return;
     }
 
-    const amount = parseFloat(casinoAmountInput.value);
-
-    if (isNaN(amount) || amount < 0.3 || amount > 6) {
-        showToast("Số lượng cược phải từ 0.3 đến 6 SUI", true);
+    if (isNaN(amount) || amount < 0.1 || amount > 6) {
+        showToast("Số lượng cược phải từ 0.1 đến 6 SUI", true);
         return;
     }
 
@@ -724,8 +722,8 @@ if (casinoAmountInput) {
         let val = parseFloat(casinoAmountInput.value);
         if (isNaN(val)) return;
         
-        if (val < 0.3) {
-            casinoAmountInput.value = "0.3";
+        if (val < 0.1) {
+            casinoAmountInput.value = "0.1";
         } else if (val > 6) {
             casinoAmountInput.value = "5";
         }
