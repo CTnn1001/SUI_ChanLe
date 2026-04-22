@@ -650,6 +650,8 @@ async function handleCasinoBet() {
         return;
     }
 
+    const amount = parseFloat(casinoAmountInput.value);
+
     if (isNaN(amount) || amount < 0.1 || amount > 6) {
         showToast("Số lượng cược phải từ 0.1 đến 6 SUI", true);
         return;
