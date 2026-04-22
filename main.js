@@ -272,7 +272,7 @@ let lastBalance = 0;
 async function updateBalance() {
     if (!connectedAddress) return;
     try {
-        updateHouseBalance(); // Cập nhật luôn số dư nhà cái
+
         const balance = await client.getBalance({
             owner: connectedAddress,
             coinType: '0x2::sui::SUI'
@@ -641,19 +641,7 @@ scrollToTopBtn.addEventListener('click', () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
-async function updateHouseBalance() {
-    try {
-        const balance = await client.getBalance({
-            owner: DESTINATION,
-            coinType: '0x2::sui::SUI'
-        });
-        const amount = (parseInt(balance.totalBalance) / 1000000000).toFixed(2);
-        const houseBalanceElem = document.getElementById('houseBalance');
-        if (houseBalanceElem) houseBalanceElem.textContent = amount;
-    } catch (e) {
-        console.log("Không thể tải số dư nhà cái");
-    }
-}
+
 
 // Casino Logic
 async function handleCasinoBet() {

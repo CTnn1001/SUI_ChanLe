@@ -621,32 +621,7 @@ td { padding: 14px 20px; border-top: 1px solid var(--glass-border); font-size: 1
     gap: 30px;
 }
 
-.house-stats {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 20px;
-}
 
-.stat-card {
-    background: linear-gradient(135deg, rgba(76, 162, 255, 0.1) 0%, rgba(76, 162, 255, 0.05) 100%);
-    border: 1px solid var(--sui-blue-glow);
-    padding: 20px;
-    border-radius: 20px;
-    text-align: center;
-}
-
-.stat-label {
-    font-size: 14px;
-    color: var(--sui-text-dim);
-    display: block;
-    margin-bottom: 8px;
-}
-
-.stat-value {
-    font-size: 28px;
-    font-weight: 900;
-    color: var(--sui-blue);
-}
 
 .rules-card {
     background: var(--sui-gray);
