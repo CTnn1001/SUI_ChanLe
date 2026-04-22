@@ -1,0 +1,2 @@
+pysui>=0.98.0
+python-dotenv
