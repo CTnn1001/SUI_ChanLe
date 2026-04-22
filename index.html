@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SuiHub</title>
+    <link rel="icon" href="data:,">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav>
+        <div class="container">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="16" cy="16" r="16" fill="#4CA2FF"/>
+                    <path d="M22 11L16 17L10 11" stroke="white" stroke-width="3" stroke-linecap="round"/>
+                </svg>
+                SuiHub
+            </div>
+            <div class="nav-tabs">
+                <button class="tab-btn active" data-tab="home">Trang chủ</button>
+                <button class="tab-btn" data-tab="transfer">Chuyển SUI</button>
+                <button class="tab-btn" data-tab="shop">Cửa hàng</button>
+            </div>
+            <button id="connectBtn" class="btn-primary">Kết nối ví</button>
+        </div>
+    </nav>
+
+    <!-- Hiển thị số dư -->
+    <div class="balance-container">
+        <div id="balanceDisplay" class="balance-card">
+            <span class="balance-label">Số dư của bạn</span>
+            <div class="balance-value"><span id="suiBalance">0.00</span> SUI</div>
+            <div id="usdBalance" class="usd-value">
+                ≈ $0.00 <span id="priceChange" class="price-up">+0.03%</span>
+            </div>
+            <span class="network-tag">Mạng Sui Testnet</span>
+        </div>
+    </div>
+
+    <main class="container">
+        <!-- Trang chủ -->
+        <section id="home-section" class="app-section active">
+            <div class="hero-content">
+                <h1>Chào mừng đến với SuiHub</h1>
+                <p>Nền tảng quản lý tài sản và mua sắm tài khoản game thế hệ mới. An toàn, minh bạch và tốc độ vượt trội trên nền tảng Sui Blockchain.</p>
+            </div>
+        </section>
+
+        <!-- Chuyển SUI -->
+        <section id="transfer-section" class="app-section">
+            <div class="form-container">
+                <h2 class="section-title">Gửi SUI Testnet</h2>
+                <div class="form-group">
+                    <label>Địa chỉ ví người nhận</label>
+                    <div class="input-wrapper">
+                        <input type="text" id="recipientAddress" placeholder="Nhập địa chỉ 0x..." class="form-input">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Số lượng muốn gửi</label>
+                    <div class="input-wrapper">
+                        <input type="number" id="transferAmount" placeholder="0.00" step="0.01" class="form-input">
+                        <button id="maxBtn" class="btn-max">Tối đa</button>
+                    </div>
+                </div>
+                <div id="transferSummary" class="transfer-summary" style="display: none;">
+                    <div class="summary-row">
+                        <span>Phí ước tính:</span>
+                        <span>~0.001 SUI</span>
+                    </div>
+                </div>
+                <button id="transferBtn" class="btn-primary btn-full">Xác nhận gửi tiền</button>
+            </div>
+
+            <!-- Bảng lịch sử giao dịch -->
+            <div class="history-container">
+                <h3 class="section-title" style="font-size: 24px; margin-bottom: 24px;">Lịch sử giao dịch</h3>
+                <div class="history-table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Loại</th>
+                                <th>Chi tiết</th>
+                                <th>Số lượng</th>
+                                <th>Thời gian</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyBody">
+                            <!-- JS will inject here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Cửa hàng -->
+        <section id="shop-section" class="app-section">
+            <h2 class="section-title">Kho tài khoản đã xác thực</h2>
+            <div id="productGrid" class="market-grid">
+                <!-- Sản phẩm render từ JS -->
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal mua đồ -->
+    <div id="modalOverlay" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Chi tiết đơn hàng</h2>
+            </div>
+            <div id="modalContent" class="modal-info"></div>
+            <div id="txResult" style="display: none; margin-bottom: 24px;">
+                <p style="color: var(--sui-text-dim); font-size: 14px; margin-bottom: 8px;">Mã giao dịch (Tx Hash):</p>
+                <p id="txHash" style="font-family: monospace; font-size: 12px; color: var(--sui-blue); word-break: break-all;"></p>
+            </div>
+            <div class="modal-btns">
+                <button id="cancelBtn" class="btn-secondary">Hủy bỏ</button>
+                <button id="confirmBtn" class="btn-primary btn-confirm">Xác nhận thanh toán</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Thông báo Toast -->
+    <div id="toast" class="toast">Giao dịch thành công!</div>
+
+    <!-- Celebration Modal -->
+    <div id="successModal" class="modal-overlay">
+        <div class="modal celebration-modal">
+            <div class="celebration-icon">🎉</div>
+            <h2 class="section-title">Cảm ơn bạn đã ủng hộ!</h2>
+            <p id="successMessage">Giao dịch của bạn đã thành công.</p>
+            <div class="modal-info">
+                <div class="info-item">
+                    <span>Số lượng:</span>
+                    <span id="successAmount" style="font-weight: 900; color: var(--sui-blue);">0.5 SUI</span>
+                </div>
+            </div>
+            <button class="btn-primary btn-full" onclick="document.getElementById('successModal').style.display='none'">TUYỆT VỜI</button>
+        </div>
+    </div>
+
+    <script type="module" src="/main.js"></script>
+</body>
+</html>
