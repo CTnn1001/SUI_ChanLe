@@ -731,3 +731,34 @@ if (casinoAmountInput) {
         }
     });
 }
+
+// Logic cho bảng thông báo mới
+document.addEventListener('DOMContentLoaded', () => {
+    const noticeModal = document.getElementById('noticeModal');
+    const closeNotice = document.getElementById('closeNotice');
+    const closeToday = document.getElementById('closeToday');
+
+    // Kiểm tra xem đã đóng trong hôm nay chưa
+    const closedDate = localStorage.getItem('notice_closed_date');
+    const today = new Date().toDateString();
+
+    if (closedDate !== today) {
+        // Hiện bảng sau 500ms để người dùng thấy mượt mà
+        setTimeout(() => {
+            noticeModal.style.display = 'flex';
+            noticeModal.classList.add('active');
+        }, 500);
+    }
+
+    // Đóng bình thường
+    closeNotice?.addEventListener('click', () => {
+        noticeModal.style.display = 'none';
+    });
+
+    // Đóng trong hôm nay
+    closeToday?.addEventListener('click', () => {
+        localStorage.setItem('notice_closed_date', today);
+        noticeModal.style.display = 'none';
+    });
+});
+

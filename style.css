@@ -926,3 +926,88 @@ td { padding: 14px 20px; border-top: 1px solid var(--glass-border); font-size: 1
     color: white;
     font-weight: 700;
 }
+
+/* Notice Modal Styles */
+.notice-modal {
+    max-width: 550px !important; /* Tăng nhẹ độ rộng để chữ dàn hàng đẹp hơn */
+    border: 1px solid var(--sui-blue) !important;
+    box-shadow: 0 0 40px rgba(76, 162, 255, 0.15) !important;
+}
+
+.notice-header {
+    margin-bottom: 24px;
+}
+
+.notice-icon {
+    font-size: 40px;
+    margin-bottom: 12px;
+}
+
+.notice-title {
+    font-size: 28px;
+    color: var(--sui-blue);
+    font-weight: 900;
+    letter-spacing: -0.5px;
+}
+
+.notice-content p {
+    color: var(--sui-text-dim);
+    margin-bottom: 8px;
+    font-size: 16px;
+    line-height: 1.5; /* Giúp giãn dòng thoáng hơn */
+    text-align: center;
+}
+
+.highlight {
+    color: white;
+    font-weight: 700;
+}
+
+.event-box {
+    background: rgba(255, 215, 0, 0.05);
+    border: 1px dashed rgba(255, 215, 0, 0.3);
+    border-radius: 24px;
+    padding: 24px;
+    margin-top: 24px;
+    margin-bottom: 30px; /* Thêm khoảng cách với 2 nút bên dưới */
+    text-align: left;
+}
+
+
+.event-title {
+    color: #ffd700;
+    font-size: 16px;
+    font-weight: 800;
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+.event-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 14px;
+}
+
+.code {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-family: monospace;
+    color: white;
+}
+
+.reward {
+    color: #10b981;
+    font-weight: 900;
+    font-size: 16px;
+}
+
+.event-example {
+    font-size: 11px !important;
+    color: var(--sui-text-dim) !important;
+    margin-top: 10px;
+    text-align: center;
+}
+
