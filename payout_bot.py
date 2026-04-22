@@ -7,6 +7,7 @@ import requests
 from decimal import Decimal
 from dotenv import load_dotenv
 from nacl.signing import SigningKey
+import hashlib
 
 # Cài đặt Logging
 logging.basicConfig(
@@ -27,23 +28,42 @@ if not SECRET_KEY_B64 or not HOUSE_ADDRESS:
     logging.error("❌ Thiếu biến môi trường trong .env")
     exit(1)
 
-# Giải mã Keypair
+# Giải mã Keypair và kiểm tra địa chỉ
 def get_key_info(b64_str):
     data = base64.b64decode(b64_str)
-    if len(data) == 33 and data[0] == 0: data = data[1:]
+    # Nếu là 33 bytes (flag + seed), lấy 32 bytes sau
+    if len(data) == 33: data = data[1:]
+    elif len(data) == 64: data = data[:32] # Nếu là 64 bytes, lấy seed 32 bytes đầu
+    
     signing_key = SigningKey(data)
-    verify_key = signing_key.verify_key
-    return signing_key, verify_key.encode()
+    pub_key_bytes = signing_key.verify_key.encode()
+    
+    # Tính toán địa chỉ Sui từ Public Key để kiểm tra
+    # Address = Blake2b256(0x00 + pubkey)
+    address_hash = hashlib.blake2b(b'\x00' + pub_key_bytes, digest_size=32).digest()
+    derived_address = "0x" + address_hash.hex()
+    
+    return signing_key, pub_key_bytes, derived_address
 
-signing_key, pub_key_bytes = get_key_info(SECRET_KEY_B64)
+signing_key, pub_key_bytes, derived_addr = get_key_info(SECRET_KEY_B64)
+
+if derived_addr.lower() != HOUSE_ADDRESS.lower():
+    logging.error(f"❌ SAI KHÓA BÍ MẬT: Khóa này thuộc về địa chỉ {derived_addr}, nhưng cấu hình nhà cái là {HOUSE_ADDRESS}")
+    exit(1)
+else:
+    logging.info(f"✅ Khóa bí mật hợp lệ cho ví: {derived_addr}")
 
 def rpc_call(method, params):
     try:
         payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
         res = requests.post(RPC_URL, json=payload, timeout=10)
-        return res.json().get('result')
+        json_res = res.json()
+        if 'error' in json_res:
+            logging.error(f"RPC Logic Error ({method}): {json_res['error']}")
+            return None
+        return json_res.get('result')
     except Exception as e:
-        # logging.error(f"RPC Error ({method}): {e}")
+        logging.error(f"RPC Network Error ({method}): {e}")
         return None
 
 def load_processed():
@@ -63,32 +83,49 @@ def get_suffix(amount_mist):
     return decimal_part[-1] if decimal_part else None
 
 def get_payout_data(sender, amount_mist):
-    # 1. Lấy danh sách coin của nhà cái để trả phí và làm nguồn tiền
-    coins = rpc_call("suix_getCoins", [HOUSE_ADDRESS, "0x2::sui::SUI", None, 1])
-    if not coins or not coins.get('data'): return None
-    coin_id = coins['data'][0]['coinObjectId']
+    # 1. Lấy danh sách coin của nhà cái
+    coins = rpc_call("suix_getCoins", [HOUSE_ADDRESS, "0x2::sui::SUI", None, 5])
+    if not coins or not coins.get('data'): 
+        logging.error("❌ Không tìm thấy Coin nào trong ví nhà cái")
+        return None
     
-    # 2. Tạo transaction bytes (Unsafe)
-    # unsafe_paySui(signer, input_coins, recipients, amounts, gas_budget)
+    # Chọn các coin có đủ số dư (reward + gas)
+    input_coins = []
+    total_input = 0
+    for c in coins['data']:
+        input_coins.append(c['coinObjectId'])
+        total_input += int(c['balance'])
+        if total_input >= amount_mist + 20000000: break # Cần khoảng 0.02 SUI gas
+    
+    if total_input < amount_mist + 20000000:
+        logging.error(f"❌ Ví nhà cái không đủ số dư thực tế (Cần {amount_mist/1e9}, có {total_input/1e9})")
+        return None
+    
+    # 2. Tạo transaction bytes
     tx_data = rpc_call("unsafe_paySui", [
         HOUSE_ADDRESS, 
-        [coin_id], 
+        input_coins, 
         [sender], 
         [str(amount_mist)], 
-        "10000000" # gas budget 0.01 SUI
+        "15000000" # Tăng gas budget lên 0.015 SUI
     ])
     return tx_data.get('txBytes') if tx_data else None
 
 def sign_and_execute(tx_bytes_b64):
     tx_bytes = base64.b64decode(tx_bytes_b64)
-    # Intent: [0, 0, 0] cho TransactionData
-    intent = b'\x00\x00\x00'
-    signature_bytes = signing_key.sign(intent + tx_bytes).signature
+    # Sui Intent Message: [IntentScope(0), Version(0), AppId(0)] + TxBytes
+    intent_msg = b'\x00\x00\x00' + tx_bytes
     
-    # Serialized Signature: [flag(0)] + [sig] + [pubkey]
+    # BẮT BUỘC: Hashing bằng Blake2b-256 trước khi ký
+    digest = hashlib.blake2b(intent_msg, digest_size=32).digest()
+    
+    # Ký trên kết quả Hash
+    signature_bytes = signing_key.sign(digest).signature
+    
+    # Serialized Signature: [Flag(0)] + [Sig(64)] + [PubKey(32)]
     serialized_sig = base64.b64encode(b'\x00' + signature_bytes + pub_key_bytes).decode()
     
-    # Execute
+    # Gửi thực thi
     return rpc_call("sui_executeTransactionBlock", [
         tx_bytes_b64, 
         [serialized_sig], 
@@ -113,16 +150,12 @@ def check_and_payout():
                           if c['owner'].get('AddressOwner') == HOUSE_ADDRESS and int(c['amount']) > 0)
         
         if house_change <= 0:
-            processed_digests.add(digest)
-            save_processed(digest)
-            continue
+            processed_digests.add(digest); save_processed(digest); continue
 
         suffix = get_suffix(house_change)
         digits = re.findall(r'\d', digest)
         if not suffix or not digits:
-            processed_digests.add(digest)
-            save_processed(digest)
-            continue
+            processed_digests.add(digest); save_processed(digest); continue
             
         last_digit = int(digits[-1])
         ratio = 0
@@ -135,18 +168,16 @@ def check_and_payout():
             reward = int(house_change * ratio)
             logging.info(f"🎯 WINNER: {sender} won {reward/1e9} SUI")
             
-            # Kiểm tra số dư (Đơn giản hóa)
-            balance = rpc_call("suix_getBalance", [HOUSE_ADDRESS])
-            if balance and int(balance['totalBalance']) < reward + 15000000:
-                processed_digests.add(digest); save_processed(digest); continue
-            
             tx_bytes = get_payout_data(sender, reward)
             if tx_bytes:
                 exec_res = sign_and_execute(tx_bytes)
                 if exec_res and exec_res.get('effects', {}).get('status', {}).get('status') == 'success':
                     logging.info(f"💸 Payout sent! Digest: {exec_res['digest']}")
                 else:
-                    logging.error(f"❌ Payout failed for {digest}")
+                    error_msg = exec_res.get('effects', {}).get('status', {}).get('error') if exec_res else "No response from node"
+                    logging.error(f"❌ Payout failed for {digest}: {error_msg}")
+            else:
+                logging.error(f"❌ Could not generate TxBytes for {digest}")
 
         processed_digests.add(digest)
         save_processed(digest)
