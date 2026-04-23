@@ -110,6 +110,5 @@ async function sendPayout(recipient, amount) {
     }
 }
 
-// Chạy mỗi 10 giây
 setInterval(checkAndPayout, 10000);
 checkAndPayout();

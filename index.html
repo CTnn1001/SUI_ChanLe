@@ -32,8 +32,9 @@
                     <button class="tab-btn active" data-tab="home">Trang chủ</button>
                     <button class="tab-btn" data-tab="transfer">Chuyển SUI</button>
                     <button class="tab-btn" data-tab="shop">Cửa hàng</button>
-                    <button class="tab-btn" data-tab="casino">Casino</button>
+                    <button class="tab-btn" data-tab="casino">Chẵn Lẻ</button>
                     <button class="tab-btn" data-tab="history">Lịch sử</button>
+                    <button class="tab-btn" data-tab="leaderboard">Bảng Xếp hạng</button>
                 </div>
                 <div class="nav-actions">
                     <button id="connectBtn" class="btn-primary">Kết nối ví</button>
@@ -45,6 +46,13 @@
         </div>
     </nav>
 
+    <!-- Live Win Feed -->
+    <div id="liveWinFeed" class="live-win-container">
+        <div id="winTicker" class="win-ticker">
+            <span class="ticker-empty">Đang cập nhật dữ liệu thắng mới nhất...</span>
+        </div>
+    </div>
+
     <!-- Hiển thị số dư -->
     <div class="balance-container">
         <div id="balanceDisplay" class="balance-card">
@@ -53,7 +61,10 @@
             <div id="usdBalance" class="usd-value">
                 ≈ $0.00 <span id="priceChange" class="price-up">+0.03%</span>
             </div>
-            <span class="network-tag">Mạng Sui Testnet</span>
+            <div class="user-status-row">
+                <span class="network-tag">Mạng Sui Testnet</span>
+                <span id="userLevel" class="level-badge level-bronze">Đồng</span>
+            </div>
         </div>
     </div>
 
@@ -162,6 +173,20 @@
                     </div>
                     <button id="casinoConfirmBtn" class="btn-primary btn-full">Xác nhận gửi SUI</button>
                 </div>
+
+                <div class="check-tx-card">
+                    <h3 class="card-subtitle">Kiểm giao dịch</h3>
+                    <div class="form-group">
+                        <label>Nhập mã giao dịch (Digest)</label>
+                        <div class="input-wrapper">
+                            <input type="text" id="checkTxDigest" placeholder="Nhập Digest..." class="form-input">
+                        </div>
+                    </div>
+                    <button id="checkTxBtn" class="btn-secondary btn-full">Xác nhận</button>
+                    <div id="checkTxResult" class="check-result" style="display: none;">
+                        <p id="checkResultText"></p>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -200,6 +225,34 @@
                         Trang <span id="currentPageDisplay">1</span> / <span id="totalPagesDisplay">1</span>
                     </div>
                     <button id="nextPage" class="pagination-btn" disabled>&gt;</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Bảng Xếp hạng -->
+        <section id="leaderboard-section" class="app-section">
+            <div class="history-container" style="max-width: 900px; margin-top: 0;">
+                <h2 class="section-title">Bảng Xếp hạng Cao thủ</h2>
+                <p style="text-align: center; color: var(--sui-text-dim); margin-bottom: 30px; margin-top: -20px;">Dựa trên các giao dịch gần đây nhất</p>
+                
+                <div class="history-table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Thứ hạng</th>
+                                <th>Địa chỉ ví</th>
+                                <th style="text-align: center;">Thắng</th>
+                                <th style="text-align: center;">Thua</th>
+                                <th style="text-align: right;">Lợi nhuận</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboardBody">
+                            <!-- JS sẽ inject dữ liệu vào đây -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="leaderboardLoading" style="text-align: center; padding: 40px; display: none;">
+                    <span class="spinner"></span> Đang tải dữ liệu từ Blockchain...
                 </div>
             </div>
         </section>

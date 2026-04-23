@@ -57,6 +57,11 @@ const casinoConfirmBtn = document.getElementById('casinoConfirmBtn');
 const SUI_PRICE_USD = 0.962; // Adjusted to match user's expected $2.88 balance
 const PRICE_CHANGE = "+0.03%";
 
+const leaderboardBody = document.getElementById('leaderboardBody');
+const leaderboardLoading = document.getElementById('leaderboardLoading');
+const winTicker = document.getElementById('winTicker');
+const userLevelBadge = document.getElementById('userLevel');
+
 function saveTransaction(type, detail, amount) {
     // Không cần lưu localStorage nữa vì sẽ fetch trực tiếp từ blockchain
     fetchTransactionHistory();
@@ -168,9 +173,41 @@ async function fetchTransactionHistory() {
             };
         });
 
+        updateUserLevel();
         renderHistory();
     } catch (e) {
         console.error("Lỗi khi tải lịch sử giao dịch:", e);
+    }
+}
+
+
+function updateUserLevel() {
+    if (!connectedAddress) return;
+
+    const casinoBets = allTransactions.filter(tx => tx.isSender && tx.casinoResult);
+    
+    // Tính tổng số tiền đã cược để tính Level
+    const totalWageredMist = casinoBets.reduce((sum, tx) => sum + Math.abs(tx.amountMist), 0);
+    const totalWageredSui = totalWageredMist / 1e9;
+
+    // Tính Level
+    let level = 'Đồng';
+    let levelClass = 'level-bronze';
+    
+    if (totalWageredSui >= 200) {
+        level = 'Kim Cương';
+        levelClass = 'level-diamond';
+    } else if (totalWageredSui >= 50) {
+        level = 'Vàng';
+        levelClass = 'level-gold';
+    } else if (totalWageredSui >= 10) {
+        level = 'Bạc';
+        levelClass = 'level-silver';
+    }
+
+    if (userLevelBadge) {
+        userLevelBadge.textContent = level;
+        userLevelBadge.className = `level-badge ${levelClass}`;
     }
 }
 
@@ -227,17 +264,32 @@ function renderHistory() {
 const tabBtns = document.querySelectorAll('.tab-btn');
 const sections = document.querySelectorAll('.app-section');
 
+function setActiveTab(target) {
+    tabBtns.forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-tab') === target);
+    });
+    sections.forEach(s => {
+        s.classList.toggle('active', s.id === `${target}-section`);
+    });
+    localStorage.setItem('active_tab', target);
+    
+    if (target === 'leaderboard') {
+        fetchLeaderboard();
+    }
+}
+
 tabBtns.forEach(btn => {
     btn.addEventListener('click', () => {
         const target = btn.getAttribute('data-tab');
-        tabBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        sections.forEach(s => {
-            s.classList.remove('active');
-            if (s.id === `${target}-section`) s.classList.add('active');
-        });
+        setActiveTab(target);
     });
 });
+
+// Load saved tab on startup
+const savedTab = localStorage.getItem('active_tab');
+if (savedTab) {
+    setActiveTab(savedTab);
+}
 
 // Count-up animation for balance
 function animateValue(obj, start, end, duration) {
@@ -745,8 +797,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (closedDate !== today) {
         // Hiện bảng sau 500ms để người dùng thấy mượt mà
         setTimeout(() => {
-            noticeModal.style.display = 'flex';
-            noticeModal.classList.add('active');
+            if (noticeModal) {
+                noticeModal.style.display = 'flex';
+                noticeModal.classList.add('active');
+            }
         }, 500);
     }
 
@@ -761,4 +815,291 @@ document.addEventListener('DOMContentLoaded', () => {
         noticeModal.style.display = 'none';
     });
 });
+
+// Kiểm giao dịch logic
+const checkTxBtn = document.getElementById('checkTxBtn');
+const checkTxDigestInput = document.getElementById('checkTxDigest');
+const checkTxResultDiv = document.getElementById('checkTxResult');
+const checkResultText = document.getElementById('checkResultText');
+
+async function handleCheckTransaction() {
+    const digest = checkTxDigestInput.value.trim();
+    if (!digest) {
+        showToast("Vui lòng nhập mã giao dịch (Digest)", true);
+        return;
+    }
+
+    checkTxBtn.disabled = true;
+    checkTxBtn.innerHTML = '<span class="spinner"></span> Đang kiểm tra...';
+    checkTxResultDiv.style.display = 'none';
+
+    try {
+        // 1. Fetch transaction details
+        const tx = await client.getTransactionBlock({
+            digest: digest,
+            options: {
+                showBalanceChanges: true,
+                showEffects: true,
+                showInput: true
+            }
+        });
+
+        if (!tx) throw new Error("Giao dịch không tồn tại");
+
+        const sender = tx.transaction.data.sender;
+        const recipientChange = tx.balanceChanges?.find(bc => 
+            (bc.owner.AddressOwner === DESTINATION || bc.owner === DESTINATION) && 
+            (bc.coinType === '0x2::sui::SUI' || bc.coinType.endsWith('SUI'))
+        );
+
+        // Kiểm tra xem có gửi đến nhà cái không
+        if (!recipientChange || parseInt(recipientChange.amount) <= 0) {
+            setCheckResult("Giao dịch không tồn tại", "result-not-found");
+            return;
+        }
+
+        const amountMist = parseInt(recipientChange.amount);
+        const rawAmountStr = (amountMist / 1000000000).toString();
+        
+        // Tính toán xem có phải là cược thắng không
+        let isWin = false;
+        let ratio = 0;
+        let lastDigit = null;
+        
+        const digits = digest.match(/\d/g);
+        if (digits) {
+            lastDigit = parseInt(digits[digits.length - 1]);
+        }
+
+        if (lastDigit !== null && rawAmountStr.includes('.')) {
+            const decimalPart = rawAmountStr.split('.')[1].replace(/0+$/, "");
+            if (decimalPart.length > 0) {
+                const lastAmountDigit = decimalPart.charAt(decimalPart.length - 1);
+                if (lastAmountDigit === '1' && [1, 3, 5, 7].includes(lastDigit)) { isWin = true; ratio = 2.4; }
+                else if (lastAmountDigit === '2' && [2, 4, 6, 8].includes(lastDigit)) { isWin = true; ratio = 2.4; }
+                else if (lastAmountDigit === '4' && [5, 6, 7, 8].includes(lastDigit)) { isWin = true; ratio = 2.2; }
+                else if (lastAmountDigit === '3' && [1, 2, 3, 4].includes(lastDigit)) { isWin = true; ratio = 2.2; }
+            }
+        }
+
+        if (!isWin) {
+            setCheckResult("Bạn đã thua", "result-not-found");
+            return;
+        }
+
+        // 2. Nếu thắng, tìm giao dịch trả thưởng từ nhà cái -> người gửi
+        // Ta tìm các giao dịch mà nhà cái gửi đi sau thời điểm này
+        const payouts = await client.queryTransactionBlocks({
+            filter: { FromAddress: DESTINATION },
+            options: { showBalanceChanges: true, showEffects: true },
+            limit: 50,
+            descendingOrder: true
+        });
+
+        const expectedRewardMist = Math.floor(amountMist * ratio);
+        
+        // Tìm payout phù hợp (gửi đến sender, số lượng khớp, timestamp sau bet)
+        const payoutFound = payouts.data.find(ptx => {
+            const toSender = ptx.balanceChanges?.find(bc => 
+                bc.owner.AddressOwner === sender && 
+                parseInt(bc.amount) >= expectedRewardMist * 0.99 // Cho phép sai số nhỏ do gas hoặc tính toán
+            );
+            const isAfter = parseInt(ptx.timestampMs || 0) >= parseInt(tx.timestampMs || 0);
+            return toSender && isAfter;
+        });
+
+        if (payoutFound) {
+            setCheckResult("Giao dịch đã trả thưởng", "result-success");
+        } else {
+            setCheckResult("Giao dịch bị lỗi (Chưa trả thưởng)", "result-error");
+        }
+
+    } catch (e) {
+        console.error(e);
+        setCheckResult("Giao dịch không tồn tại", "result-not-found");
+    } finally {
+        checkTxBtn.disabled = false;
+        checkTxBtn.textContent = "Xác nhận";
+    }
+}
+
+function setCheckResult(text, className) {
+    checkResultText.textContent = text;
+    checkResultText.className = className;
+    checkTxResultDiv.style.display = 'block';
+}
+
+if (checkTxBtn) {
+    checkTxBtn.addEventListener('click', handleCheckTransaction);
+}
+
+// Leaderboard Logic
+async function fetchLeaderboard() {
+    if (!leaderboardBody) return;
+    
+    leaderboardLoading.style.display = 'block';
+    leaderboardBody.innerHTML = '';
+    
+    try {
+        // Fetch recent transactions to the house
+        const txs = await client.queryTransactionBlocks({
+            filter: { ToAddress: DESTINATION },
+            options: { showBalanceChanges: true, showInput: true, showEffects: true },
+            limit: 100,
+            descendingOrder: true
+        });
+
+        const stats = {};
+
+        txs.data.forEach(tx => {
+            if (tx.effects.status.status !== 'success') return;
+
+            const sender = tx.transaction.data.sender;
+            const digest = tx.digest;
+            
+            // Tìm sự thay đổi số dư của nhà cái (số dương là tiền nhận được)
+            const houseChange = tx.balanceChanges.find(bc => 
+                (bc.owner.AddressOwner === DESTINATION || bc.owner === DESTINATION) && 
+                (bc.coinType === '0x2::sui::SUI' || bc.coinType.endsWith('SUI'))
+            );
+            
+            if (!houseChange || parseInt(houseChange.amount) <= 0) return;
+
+            const amountMist = parseInt(houseChange.amount);
+            const rawAmountStr = (amountMist / 1000000000).toString();
+            
+            // Logic cược:
+            if (!rawAmountStr.includes('.')) return;
+            const decimalPart = rawAmountStr.split('.')[1].replace(/0+$/, "");
+            if (decimalPart.length === 0) return;
+            
+            const lastAmountDigit = decimalPart.charAt(decimalPart.length - 1);
+            const digits = digest.match(/\d/g);
+            if (!digits) return;
+            const lastDigit = parseInt(digits[digits.length - 1]);
+
+            if (!stats[sender]) {
+                stats[sender] = { address: sender, wins: 0, losses: 0, profitMist: 0 };
+            }
+
+            let isWin = false;
+            let ratio = 0;
+
+            if (lastAmountDigit === '1' && [1, 3, 5, 7].includes(lastDigit)) { isWin = true; ratio = 2.4; }
+            else if (lastAmountDigit === '2' && [2, 4, 6, 8].includes(lastDigit)) { isWin = true; ratio = 2.4; }
+            else if (lastAmountDigit === '4' && [5, 6, 7, 8].includes(lastDigit)) { isWin = true; ratio = 2.2; }
+            else if (lastAmountDigit === '3' && [1, 2, 3, 4].includes(lastDigit)) { isWin = true; ratio = 2.2; }
+
+            if (isWin) {
+                stats[sender].wins++;
+                stats[sender].profitMist += Math.floor(amountMist * (ratio - 1));
+            } else {
+                stats[sender].losses++;
+                stats[sender].profitMist -= amountMist;
+            }
+        });
+
+        // Convert to array and sort by profit
+        const leaderboardData = Object.values(stats)
+            .sort((a, b) => b.profitMist - a.profitMist)
+            .slice(0, 10); // Top 10
+
+        if (leaderboardData.length === 0) {
+            leaderboardBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 40px; color: var(--sui-text-dim);">Chưa có dữ liệu người chơi</td></tr>';
+        } else {
+            leaderboardBody.innerHTML = leaderboardData.map((user, index) => `
+                <tr>
+                    <td>
+                        <div class="rank-badge ${index < 3 ? 'rank-' + (index + 1) : ''}">${index + 1}</div>
+                    </td>
+                    <td style="font-family: monospace; font-size: 13px;">
+                        ${user.address.slice(0, 10)}...${user.address.slice(-6)}
+                    </td>
+                    <td style="text-align: center; color: #10b981; font-weight: 800;">${user.wins}</td>
+                    <td style="text-align: center; color: #ef4444; font-weight: 800;">${user.losses}</td>
+                    <td style="text-align: right; font-weight: 900; color: ${user.profitMist >= 0 ? '#10b981' : '#ef4444'};">
+                        ${user.profitMist >= 0 ? '+' : ''}${(user.profitMist / 1e9).toFixed(2)} SUI
+                    </td>
+                </tr>
+            `).join('');
+        }
+    } catch (e) {
+        console.error("Lỗi khi tải bảng xếp hạng:", e);
+        leaderboardBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 40px; color: #ef4444;">Lỗi khi tải dữ liệu từ Blockchain</td></tr>';
+    } finally {
+        leaderboardLoading.style.display = 'none';
+    }
+}
+
+// Live Win Feed Logic
+async function updateLiveWinFeed() {
+    if (!winTicker) return;
+
+    try {
+        const txs = await client.queryTransactionBlocks({
+            filter: { ToAddress: DESTINATION },
+            options: { showBalanceChanges: true, showInput: true },
+            limit: 20,
+            descendingOrder: true
+        });
+
+        const wins = [];
+        txs.data.forEach(tx => {
+            const digest = tx.digest;
+            const sender = tx.transaction.data.sender;
+            const houseChange = tx.balanceChanges.find(bc => 
+                (bc.owner.AddressOwner === DESTINATION || bc.owner === DESTINATION) && 
+                (bc.coinType === '0x2::sui::SUI' || bc.coinType.endsWith('SUI'))
+            );
+            
+            if (!houseChange || parseInt(houseChange.amount) <= 0) return;
+
+            const amountMist = parseInt(houseChange.amount);
+            const rawAmountStr = (amountMist / 1000000000).toString();
+            if (!rawAmountStr.includes('.')) return;
+            
+            const decimalPart = rawAmountStr.split('.')[1].replace(/0+$/, "");
+            const lastAmountDigit = decimalPart.charAt(decimalPart.length - 1);
+            const digits = digest.match(/\d/g);
+            if (!digits) return;
+            const lastDigit = parseInt(digits[digits.length - 1]);
+
+            let isWin = false;
+            let ratio = 0;
+            if (lastAmountDigit === '1' && [1, 3, 5, 7].includes(lastDigit)) { isWin = true; ratio = 2.4; }
+            else if (lastAmountDigit === '2' && [2, 4, 6, 8].includes(lastDigit)) { isWin = true; ratio = 2.4; }
+            else if (lastAmountDigit === '4' && [5, 6, 7, 8].includes(lastDigit)) { isWin = true; ratio = 2.2; }
+            else if (lastAmountDigit === '3' && [1, 2, 3, 4].includes(lastDigit)) { isWin = true; ratio = 2.2; }
+
+            if (isWin) {
+                wins.push({
+                    addr: sender.slice(0, 6) + '...' + sender.slice(-4),
+                    amount: (amountMist * ratio / 1e9).toFixed(2)
+                });
+            }
+        });
+
+        if (wins.length > 0) {
+            // Nhân đôi danh sách để tạo hiệu ứng chạy vô tận mượt mà hơn
+            const displayWins = [...wins, ...wins, ...wins];
+            winTicker.innerHTML = displayWins.map(w => `
+                <div class="ticker-item">
+                    <span class="ticker-addr">${w.addr}</span>
+                    <span class="ticker-label">thắng</span>
+                    <span class="ticker-amount">${w.amount} SUI</span>
+                    <span class="ticker-icon">🎉</span>
+                </div>
+            `).join('');
+            
+            // Điều chỉnh tốc độ animation dựa trên số lượng item
+            winTicker.style.animationDuration = `${wins.length * 5}s`;
+        }
+    } catch (e) {
+        console.error("Lỗi Live Win Feed:", e);
+    }
+}
+
+// Khởi chạy Live Win Feed
+updateLiveWinFeed();
+setInterval(updateLiveWinFeed, 30000); // Cập nhật mỗi 30s
 
